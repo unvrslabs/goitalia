@@ -1,0 +1,27 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: goitalia
+      POSTGRES_PASSWORD: goitalia
+      POSTGRES_DB: goitalia
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://goitalia:goitalia@db:5432/goitalia
+    depends_on:
+      - db
+    env_file:
+      - .env
+
+volumes:
+  postgres_data:

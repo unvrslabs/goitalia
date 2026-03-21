@@ -1,0 +1,277 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// AUTH & BILLING
+// ============================================
+
+model User {
+  id               String   @id @default(uuid())
+  email            String   @unique
+  name             String?
+  passwordHash     String?
+  image            String?
+  stripeCustomerId String?  @unique
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  companies CompanyMember[]
+  sessions  Session[]
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Subscription {
+  id                   String   @id @default(uuid())
+  companyId            String   @unique
+  stripeSubscriptionId String   @unique
+  plan                 String   // "starter", "pro", "enterprise"
+  status               String   // "active", "past_due", "cancelled"
+  currentPeriodEnd     DateTime
+  createdAt            DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+}
+
+// ============================================
+// AZIENDA
+// ============================================
+
+model Company {
+  id          String   @id @default(uuid())
+  name        String
+  sector      String?
+  description String?
+  status      String   @default("active") // "active", "paused", "suspended"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members      CompanyMember[]
+  agents       Agent[]
+  tasks        Task[]
+  plugins      PluginInstallation[]
+  credentials  Credential[]
+  activityLog  ActivityLog[]
+  subscription Subscription?
+  budgetConfig BudgetConfig?
+
+  anthropicApiKey String?
+}
+
+model CompanyMember {
+  id        String   @id @default(uuid())
+  userId    String
+  companyId String
+  role      String   @default("owner") // "owner", "admin", "viewer"
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id])
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([userId, companyId])
+}
+
+model BudgetConfig {
+  id                String   @id @default(uuid())
+  companyId         String   @unique
+  monthlyLimitCents Int      @default(0)
+  spentThisMonth    Int      @default(0)
+  warningThreshold  Int      @default(80)
+  resetDay          Int      @default(1)
+  updatedAt         DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+}
+
+// ============================================
+// AGENTI AI
+// ============================================
+
+model Agent {
+  id          String  @id @default(uuid())
+  companyId   String
+  name        String
+  role        String
+  title       String?
+  description String?
+  status      String  @default("idle") // "idle", "working", "paused", "error"
+  icon        String?
+
+  model        String @default("claude-sonnet-4-6")
+  systemPrompt String
+  temperature  Float  @default(0.7)
+  maxTokens    Int    @default(4096)
+
+  heartbeatInterval Int       @default(600)
+  isActive          Boolean   @default(true)
+  lastHeartbeat     DateTime?
+  nextHeartbeat     DateTime?
+
+  reportsToId   String?
+  reportsTo     Agent?  @relation("OrgChart", fields: [reportsToId], references: [id])
+  directReports Agent[] @relation("OrgChart")
+
+  monthlyBudgetCents Int @default(0)
+  spentThisMonth     Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company       Company        @relation(fields: [companyId], references: [id])
+  assignedTasks Task[]         @relation("AssignedTo")
+  createdTasks  Task[]         @relation("CreatedBy")
+  heartbeatRuns HeartbeatRun[]
+  activityLogs  ActivityLog[]
+}
+
+// ============================================
+// TASK
+// ============================================
+
+model Task {
+  id          String  @id @default(uuid())
+  companyId   String
+  title       String
+  description String?
+  status      String  @default("backlog") // "backlog", "todo", "in_progress", "review", "done", "cancelled"
+  priority    String  @default("medium")  // "low", "medium", "high", "urgent"
+
+  assignedAgentId  String?
+  createdByAgentId String?
+
+  parentTaskId String?
+  parentTask   Task?   @relation("SubTasks", fields: [parentTaskId], references: [id])
+  subTasks     Task[]  @relation("SubTasks")
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  company        Company       @relation(fields: [companyId], references: [id])
+  assignedAgent  Agent?        @relation("AssignedTo", fields: [assignedAgentId], references: [id])
+  createdByAgent Agent?        @relation("CreatedBy", fields: [createdByAgentId], references: [id])
+  comments       TaskComment[]
+}
+
+model TaskComment {
+  id        String   @id @default(uuid())
+  taskId    String
+  agentId   String?
+  userId    String?
+  body      String
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id])
+}
+
+// ============================================
+// HEARTBEAT
+// ============================================
+
+model HeartbeatRun {
+  id        String  @id @default(uuid())
+  agentId   String
+  companyId String
+  status    String
+
+  prompt    String
+  response  String?
+  toolCalls Json?
+
+  inputTokens  Int @default(0)
+  outputTokens Int @default(0)
+  costCents    Int @default(0)
+
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  durationMs  Int?
+
+  agent Agent @relation(fields: [agentId], references: [id])
+
+  @@index([agentId, startedAt])
+  @@index([companyId, startedAt])
+}
+
+// ============================================
+// PLUGIN
+// ============================================
+
+model PluginInstallation {
+  id        String   @id @default(uuid())
+  companyId String
+  pluginId  String
+  status    String   @default("inactive")
+  config    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, pluginId])
+}
+
+model Credential {
+  id        String    @id @default(uuid())
+  companyId String
+  pluginId  String
+  type      String
+  data      String
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, pluginId])
+}
+
+// ============================================
+// ACTIVITY LOG
+// ============================================
+
+model ActivityLog {
+  id         String   @id @default(uuid())
+  companyId  String
+  agentId    String?
+  action     String
+  entityType String
+  entityId   String?
+  details    Json?
+  createdAt  DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+  agent   Agent?  @relation(fields: [agentId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@index([agentId, createdAt])
+}
+
+// ============================================
+// LICENZE (self-hosted)
+// ============================================
+
+model License {
+  id                   String    @id @default(uuid())
+  companyId            String
+  plan                 String
+  licenseKey           String    @unique
+  maxAgents            Int
+  enabledPlugins       String[]
+  stripeSubscriptionId String?
+  issuedAt             DateTime  @default(now())
+  expiresAt            DateTime
+  lastValidated        DateTime?
+}
