@@ -37,10 +37,16 @@ export async function POST(req: NextRequest) {
       "EMAIL_VERIFICATION",
       24 * 60 * 60 * 1000
     );
-    await sendVerificationEmail(email, name, token);
+
+    try {
+      await sendVerificationEmail(email, name, token);
+    } catch (emailErr) {
+      console.error("sendVerificationEmail failed:", emailErr);
+    }
 
     return NextResponse.json({ ok: true });
-  } catch {
+  } catch (err) {
+    console.error("REGISTRATI ERROR:", err);
     return NextResponse.json({ error: "Errore interno" }, { status: 500 });
   }
 }
