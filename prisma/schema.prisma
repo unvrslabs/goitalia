@@ -11,17 +11,56 @@ datasource db {
 // ============================================
 
 model User {
-  id               String   @id @default(uuid())
-  email            String   @unique
-  name             String?
-  passwordHash     String?
-  image            String?
-  stripeCustomerId String?  @unique
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                String    @id @default(uuid())
+  email             String    @unique
+  name              String?
+  passwordHash      String?
+  emailVerified     DateTime?
+  passwordChangedAt DateTime?
+  image             String?
+  stripeCustomerId  String?   @unique
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  companies CompanyMember[]
-  sessions  Session[]
+  companies  CompanyMember[]
+  sessions   Session[]
+  accounts   Account[]
+  authTokens AuthToken[]
+}
+
+// Account OAuth (richiesto da @auth/prisma-adapter per Google)
+model Account {
+  id                String  @id @default(uuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+// Token per verifica email e reset password
+model AuthToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  type      String   // "EMAIL_VERIFICATION" | "PASSWORD_RESET"
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId, type])
 }
 
 model Session {
